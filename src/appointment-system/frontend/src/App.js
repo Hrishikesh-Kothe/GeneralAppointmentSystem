@@ -5,6 +5,7 @@ import { Label } from './components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Calendar } from './components/ui/calendar';
+import { RadioGroup, RadioGroupItem } from './components/ui/radio-group';
 import { toast, Toaster } from 'sonner';
 
 const categories = ['healthcare', 'personal care', 'education', 'homeservice'];
@@ -19,6 +20,11 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState();
   const [selectedTime, setSelectedTime] = useState('');
   const [dashboardView, setDashboardView] = useState('main');
+  
+  // Bulk slot creation states
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [slotInterval, setSlotInterval] = useState('30');
 
   // Form states
   const [formData, setFormData] = useState({
@@ -103,7 +109,23 @@ export default function App() {
     }
   };
 
-  const createTimeSlot = async () => {
+  const generateTimeSlots = (start, end, intervalMinutes) => {
+    const slots = [];
+    const startTime = new Date(`2000-01-01T${start}:00`);
+    const endTime = new Date(`2000-01-01T${end}:00`);
+    
+    let currentTime = new Date(startTime);
+    
+    while (currentTime < endTime) {
+      const timeString = currentTime.toTimeString().slice(0, 5);
+      slots.push(timeString);
+      currentTime.setMinutes(currentTime.getMinutes() + intervalMinutes);
+    }
+    
+    return slots;
+  };
+
+  const createSingleSlot = async () => {
     if (!selectedDate || !selectedTime) {
       toast.error('Please select both date and time');
       return;
@@ -124,18 +146,86 @@ export default function App() {
       });
 
       if (response.ok) {
-        toast.success('Time slot created!');
+        toast.success('Time slot created successfully!');
         setSelectedDate(undefined);
         setSelectedTime('');
         setDashboardView('main');
         loadAppointments();
       } else {
-        const error = await response.text();
-        toast.error(`Error creating slot: ${error}`);
+        toast.error('Failed to create time slot');
       }
     } catch (error) {
       console.error('Error creating appointment:', error);
       toast.error('Failed to create time slot');
+    }
+  };
+
+  const createBulkSlots = async () => {
+    if (!selectedDate || !startTime || !endTime) {
+      toast.error('Please select date, start time, and end time');
+      return;
+    }
+
+    if (startTime >= endTime) {
+      toast.error('End time must be after start time');
+      return;
+    }
+
+    try {
+      const timeSlots = generateTimeSlots(startTime, endTime, parseInt(slotInterval));
+      
+      if (timeSlots.length === 0) {
+        toast.error('No time slots generated. Please check your time range.');
+        return;
+      }
+
+      // Create all appointments in parallel for better performance
+      const appointmentPromises = timeSlots.map(time => 
+        makeRequest('/appointments', {
+          method: 'POST',
+          body: JSON.stringify({
+            specialistId: user?._id,
+            specialistName: user?.name,
+            specialization: user?.specialization,
+            category: user?.category,
+            date: selectedDate.toISOString().split('T')[0],
+            time: time,
+            isBooked: false
+          }),
+        })
+      );
+
+      const responses = await Promise.allSettled(appointmentPromises);
+      
+      let successCount = 0;
+      let errorCount = 0;
+
+      responses.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.ok) {
+          successCount++;
+        } else {
+          errorCount++;
+          console.error(`Failed to create slot ${timeSlots[index]}:`, result);
+        }
+      });
+
+      // Simple toast notifications
+      if (successCount > 0) {
+        toast.success(`${successCount} time slots created successfully!`);
+      } else {
+        toast.error('Failed to create time slots');
+      }
+
+      // Reset form
+      setSelectedDate(undefined);
+      setStartTime('');
+      setEndTime('');
+      setSlotInterval('30');
+      setDashboardView('main');
+      loadAppointments();
+    } catch (error) {
+      console.error('Error creating bulk slots:', error);
+      toast.error('Failed to create time slots');
     }
   };
 
@@ -337,6 +427,12 @@ export default function App() {
           <div className="space-y-6">
             <div className="text-center">
               <h2 className="text-3xl font-semibold text-foreground mb-2">Dashboard</h2>
+              <p className="text-muted-foreground">
+                {user?.userType === 'member' 
+                  ? 'Book appointments with service specialists' 
+                  : 'Manage your appointment schedule and availability'
+                }
+              </p>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
@@ -445,18 +541,19 @@ export default function App() {
               <Button variant="outline" onClick={() => setDashboardView('main')}>
                 ← Back to Dashboard
               </Button>
-              <h2 className="text-2xl font-semibold">Create Time Slot</h2>
+              <h2 className="text-2xl font-semibold">Create Time Slots</h2>
             </div>
 
             <div className="max-w-2xl mx-auto">
               <Card>
                 <CardHeader>
-                  <CardTitle>Add Available Time</CardTitle>
+                  <CardTitle>Add Available Times</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Select a date and time when you'll be available for appointments
+                    Create single appointments or generate multiple slots automatically
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {/* Date Selection */}
                   <div className="space-y-2">
                     <Label>Select Date</Label>
                     <div className="flex justify-center">
@@ -469,19 +566,80 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="time">Select Time</Label>
-                    <Input
-                      id="time"
-                      type="time"
-                      value={selectedTime}
-                      onChange={(e) => setSelectedTime(e.target.value)}
-                    />
-                  </div>
+                  {/* Single Time or Time Range */}
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      <Label>For a single appointment:</Label>
+                      <Input
+                        type="time"
+                        value={selectedTime}
+                        onChange={(e) => setSelectedTime(e.target.value)}
+                        placeholder="Select specific time"
+                      />
+                      <Button onClick={createSingleSlot} variant="outline" className="w-full">
+                        Create Single Time Slot
+                      </Button>
+                    </div>
 
-                  <Button onClick={createTimeSlot} className="w-full" size="lg">
-                    Create Time Slot
-                  </Button>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-background px-2 text-muted-foreground">Or</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Label>For multiple appointments:</Label>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="startTime">Start Time</Label>
+                          <Input
+                            id="startTime"
+                            type="time"
+                            value={startTime}
+                            onChange={(e) => setStartTime(e.target.value)}
+                            placeholder="09:00"
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="endTime">End Time</Label>
+                          <Input
+                            id="endTime"
+                            type="time"
+                            value={endTime}
+                            onChange={(e) => setEndTime(e.target.value)}
+                            placeholder="17:00"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <Label>Slot Duration</Label>
+                        <RadioGroup value={slotInterval} onValueChange={setSlotInterval} className="flex space-x-6">
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="15" id="15min" />
+                            <Label htmlFor="15min" className="text-sm">15 minutes</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="30" id="30min" />
+                            <Label htmlFor="30min" className="text-sm">30 minutes</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="60" id="1hour" />
+                            <Label htmlFor="1hour" className="text-sm">1 hour</Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+
+                      <Button onClick={createBulkSlots} variant="outline" className="w-full">
+                        Create Multiple Time Slots
+                      </Button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
