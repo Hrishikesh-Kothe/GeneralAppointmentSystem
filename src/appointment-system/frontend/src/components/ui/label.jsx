@@ -1,24 +1,18 @@
-"use client";
+import React from 'react';
 
-import * as React from "react";
-import * as LabelPrimitive from "@radix-ui/react-label";
+// Simple utility function for classnames
+function cn(...classes) {
+  return classes.filter(Boolean).join(' ');
+}
 
-import { cn } from "./utils";
-
-function Label({
-  className,
-  ...props
-}) {
+export function Label({ className = '', ...props }) {
   return (
-    <LabelPrimitive.Root
-      data-slot="label"
+    <label
       className={cn(
-        "flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
+        'text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
         className
       )}
       {...props}
     />
   );
 }
-
-export { Label };

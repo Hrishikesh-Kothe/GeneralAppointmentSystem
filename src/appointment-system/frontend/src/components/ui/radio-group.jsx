@@ -1,58 +1,37 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 
-const RadioGroup = ({ className = '', value, onValueChange, children, ...props }) => {
-  const name = `radio-group-${Math.random().toString(36).substr(2, 9)}`;
-  
-  const handleChange = (event) => {
-    const newValue = event.target.value;
-    console.log('RadioGroup changing value to:', newValue);
-    if (onValueChange) {
-      onValueChange(newValue);
-    }
-  };
+// Simple utility function for classnames
+function cn(...classes) {
+  return classes.filter(Boolean).join(' ');
+}
 
+const RadioGroupContext = createContext();
+
+export function RadioGroup({ value, onValueChange, children, className = '', ...props }) {
   return (
-    <div
-      className={`grid gap-2 ${className}`}
-      {...props}
-      role="radiogroup"
-    >
-      {React.Children.map(children, (child) => {
-        if (React.isValidElement(child) && child.type === 'div') {
-          // Look for RadioGroupItem inside the div
-          return React.cloneElement(child, {
-            children: React.Children.map(child.props.children, (grandChild) => {
-              if (React.isValidElement(grandChild) && grandChild.type === RadioGroupItem) {
-                return React.cloneElement(grandChild, {
-                  checked: grandChild.props.value === value,
-                  onChange: handleChange,
-                  name: name
-                });
-              }
-              return grandChild;
-            })
-          });
-        }
-        return child;
-      })}
-    </div>
+    <RadioGroupContext.Provider value={{ value, onValueChange }}>
+      <div className={cn('grid gap-2', className)} {...props}>
+        {children}
+      </div>
+    </RadioGroupContext.Provider>
   );
-};
+}
 
-const RadioGroupItem = ({ className = '', value, checked = false, onChange, name, ...props }) => {
-  console.log(`RadioGroupItem ${value} - checked:`, checked);
-  
+export function RadioGroupItem({ value, id, className = '', ...props }) {
+  const { value: groupValue, onValueChange } = useContext(RadioGroupContext);
+  const isChecked = groupValue === value;
+
   return (
     <input
       type="radio"
-      value={value}
-      checked={checked}
-      onChange={onChange}
-      name={name}
-      className={`h-4 w-4 rounded-full border-2 border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 ${className}`}
+      id={id}
+      checked={isChecked}
+      onChange={() => onValueChange && onValueChange(value)}
+      className={cn(
+        'h-4 w-4 rounded-full border border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2',
+        className
+      )}
       {...props}
     />
   );
-};
-
-export { RadioGroup, RadioGroupItem };
+}
